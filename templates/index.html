@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Application</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <script src="/static/js/scripts.js" defer></script>
+</head>
+<body>
+    <div class="container">
+        <div class="chat-section">
+            <div id="chatbox" class="chatbox"></div>
+            <div class="input-section">
+                <input type="text" id="chatInput" placeholder="Type your query...">
+                <button onclick="sendPrompt()">Send</button>
+                <button onclick="downloadChatAsPDF()">Download Chat as PDF</button>
+            </div>
+        </div>
+        <div class="sidebar">
+            <h2>File Operations</h2>
+            <input type="file" id="file">
+            <button onclick="addDataset()">Add File</button>
+            <div id="uploadResult"></div>
+            <button onclick="listFiles()">List Files</button>
+            <div id="fileList"></div>
+            <input type="text" id="deleteFileName" placeholder="Filename to delete">
+            <button onclick="deleteFile()">Delete File</button>
+            <div id="deleteResult"></div>
+        </div>
+    </div>
+</body>
+</html>
