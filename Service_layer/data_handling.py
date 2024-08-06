@@ -1,34 +1,7 @@
-from utils.mysql_connect import connect_to_mysql, logger
-import pandas as pd
-from flask import jsonify
+from utils.config import logger
 import os
 import pdfplumber
-def fetch_all_tables_data():
-    try:
-        connection = connect_to_mysql()
-        cursor = connection.cursor()
-        cursor.execute("SHOW TABLES")
-        tables = cursor.fetchall()
 
-        all_data = [] 
-
-        for table in tables:
-            table_name=table[0]
-            query=f"SELECT * FROM {table_name}"
-            df = pd.read_sql(query, connection)
-          
-            for index, row in df.iterrows():
-                row_data = row.to_dict()
-                all_data.append({"data": row_data, "source":f"MySQL table : {table_name}"})
-
-        cursor.close
-        print("successfully fetch data from mysql database")
-        connection.close()
-        return all_data
-    except Exception as e:
-        logger.error(f"Error fetching data from MySQL: {e}")
-        return jsonify({"detail":"Error fetching data from database"}),500
-    
 def extract_text_from_pdf(file_path):
     try:
         text = ""
@@ -76,7 +49,7 @@ def fetch_from_files(file_path):
         return data
     except Exception as e:
         logger.error(f"Error reading files from {file_path}: {e}")
-        return jsonify({"detail":"Error in reading files"}),500
+        raise
     
 
 

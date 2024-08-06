@@ -1,8 +1,8 @@
-from utils.config import UPLOADS_DIR, index_name, model
+from utils.config import UPLOADS_DIR, index_name, model, logger,pinecone,spec
 from Service_layer.data_handling import fetch_from_files
 from Service_layer.service import process_and_index_data
 import os
-from utils.mysql_connect import logger
+import traceback
 from Service_layer import service
 from langchain_pinecone import PineconeVectorStore
 from utils.embeddings_utils import SentenceTransformerEmbedding
@@ -40,10 +40,11 @@ def handle_query(query_text):
         
         # Fetch results with pagination
         while True:
-            response = service.pinecone_index.query(
+            response = pinecone_index.query(
                 top_k=50,  # Number of results per page
                 vector=query_embedding,
                 include_metadata=True,
+                namespace='task1',
                 cursor=cursor  # Use cursor for pagination
             )
             
@@ -85,7 +86,7 @@ def delete_files(filename):
         query_embedding = embedding.embed_query(f"File: {filename}")
         
         # Perform the query to get relevant vectors
-        response = service.pinecone_index.query(
+        response = pinecone_index.query(
             vector=query_embedding,
             top_k=1000,  # Adjust based on the expected number of vectors to retrieve
             include_metadata=True
@@ -101,7 +102,7 @@ def delete_files(filename):
             return jsonify({"message": f"No data found for file {filename}."})
 
         # Delete vectors from Pinecone
-        service.pinecone_index.delete(ids=vectors_to_delete)
+        pinecone_index.delete(ids=vectors_to_delete)
 
         # Delete the file from the uploads directory
         file_path = os.path.join(UPLOADS_DIR, filename)
@@ -110,4 +111,35 @@ def delete_files(filename):
 
     except Exception as e:
         logger.error(f"Error processing file: {e}")
+        raise
+
+def initialize_index():
+    try:
+        # Check if the index already exists
+        if index_name not in pinecone.list_indexes().names():
+
+            # Create the index with the specified parameters
+            pinecone.create_index(
+                name=index_name,
+                dimension=384,
+                metric="cosine",
+                spec=spec
+            )
+            print("Index created successfully.")
+        global pinecone_index
+        pinecone_index = pinecone.Index(index_name)
+        print(pinecone_index.describe_index_stats())
+    except Exception as e:
+        print(f"Error initializing Pinecone index: {e}")
+        traceback.print_exc()  # Print stack trace for detailed error information
+        return jsonify({"error":"Error Initializing pinecone index"}),500
+    
+def startup_prompt():
+    try:
+      files_choice = input("Fetch all data from files in the uploads directory? (y/n): ")
+      if files_choice.lower() == 'y':
+        files_data = fetch_from_files(UPLOADS_DIR)
+        process_and_index_data(files_data)
+    except Exception as e:
+        logger.error(f"error in startup prompt : {e}")
         raise

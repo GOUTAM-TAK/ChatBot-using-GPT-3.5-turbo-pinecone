@@ -1,38 +1,12 @@
-from Service_layer.data_handling import fetch_all_tables_data, fetch_from_files
-from utils.mysql_connect import logger
-from flask import jsonify
-from utils.config import index_name, model, pinecone, llm, UPLOADS_DIR,spec
-import traceback
+from utils.config import index_name, model, llm, UPLOADS_DIR
 from langchain_pinecone import PineconeVectorStore
-from langchain_community.chat_models import ChatOpenAI
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
 import json
 from utils.embeddings_utils import SentenceTransformerEmbedding
 from datetime import datetime,date
 from typing import List
-from utils.utils_method import chunk_text,summarize_text
-from utils.config import tokenizer
-def initialize_index():
-    try:
-        # Check if the index already exists
-        if index_name not in pinecone.list_indexes().names():
-
-            # Create the index with the specified parameters
-            pinecone.create_index(
-                name=index_name,
-                dimension=384,
-                metric="cosine",
-                spec=spec
-            )
-            print("Index created successfully.")
-        global pinecone_index
-        pinecone_index = pinecone.Index(index_name)
-        print(pinecone_index.describe_index_stats())
-    except Exception as e:
-        print(f"Error initializing Pinecone index: {e}")
-        traceback.print_exc()  # Print stack trace for detailed error information
-        return jsonify({"error":"Error Initializing pinecone index"}),500
+from utils.config import logger
 
 # Define custom JSON serializer for objects not serializable by default JSON encoder
 def json_serialize(obj):
@@ -72,6 +46,7 @@ def process_and_index_data(data):
             texts=documents,
             embedding=embedding,  # Pass the embedding object
             metadatas=metadata_list,
+            namespace='task1',
             index_name=index_name
         )
         print("Data indexed successfully in Pinecone.")
@@ -124,33 +99,3 @@ def fetch_query_vector(query):
     except Exception as e:
         logger.error(f"Error encoding query: {e}")
         raise
-
-
-def startup_prompt():
-    mysql_choice = input("Fetch all data from MySQL? (y/n): ")
-    if mysql_choice.lower() == 'y':
-        all_data = fetch_all_tables_data()
-        for data_item in all_data:  # Changed to iterate over list
-            process_and_index_data([data_item])  # Pass a list of one item to process_and_index_data
-
-    files_choice = input("Fetch all data from files in the uploads directory? (y/n): ")
-    if files_choice.lower() == 'y':
-        files_data = fetch_from_files(UPLOADS_DIR)
-        process_and_index_data(files_data)
-
-
-def summarize_large_text(query, related_text):
-    # Chunk the related text
-    text_chunks = chunk_text(related_text)
-
-    # Summarize each chunk
-    summaries = [summarize_text(query, chunk) for chunk in text_chunks]
-
-    # Aggregate summaries
-    aggregated_summary = " ".join(summaries)
-
-    # Check if the aggregated summary is within the token limit
-    while len(tokenizer.encode(aggregated_summary)) > 1024:
-        aggregated_summary = summarize_text(query, aggregated_summary)
-    
-    return aggregated_summary

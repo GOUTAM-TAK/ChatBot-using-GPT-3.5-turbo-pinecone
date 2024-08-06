@@ -1,8 +1,11 @@
 from sentence_transformers import SentenceTransformer
-from transformers import BartTokenizer, BartForConditionalGeneration
 from langchain_community.chat_models import ChatOpenAI
 from pinecone import Pinecone,ServerlessSpec
 import os
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 # Load the sentence transformer model
 model = SentenceTransformer('all-MiniLM-L6-v2')
 
@@ -22,6 +25,3 @@ llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0, openai_api_key=openai_api
 # Initialize Pinecone
 pinecone = Pinecone(api_key=pinecone_api_key)
 
-# Initialize the BART model and tokenizer
-tokenizer = BartTokenizer.from_pretrained('facebook/bart-large-cnn')
-summerize_model = BartForConditionalGeneration.from_pretrained('facebook/bart-large-cnn')

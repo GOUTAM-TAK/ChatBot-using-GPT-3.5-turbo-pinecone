@@ -1,6 +1,4 @@
 # Define a custom embedding function wrapper
-from sentence_transformers import SentenceTransformer
-
 class SentenceTransformerEmbedding:
     def __init__(self, model):
         self.model = model

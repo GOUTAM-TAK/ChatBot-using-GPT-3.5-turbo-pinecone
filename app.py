@@ -1,18 +1,9 @@
 import os
 import traceback
 from dotenv import load_dotenv
-from flask import Flask, request, jsonify, send_from_directory, render_template
-from pydantic import BaseModel
-from typing import List
-from utils.mysql_connect import logger
-from langchain.llms import OpenAI as LangChainOpenAI
-from langchain_pinecone import PineconeVectorStore
-from Service_layer import service
-from Service_layer.service import startup_prompt, convert_to_natural_language, process_and_index_data, initialize_index
-from utils.embeddings_utils import SentenceTransformerEmbedding
-from Service_layer.data_handling import  fetch_from_files
-from utils.config import index_name,model, UPLOADS_DIR
-from controller_layer.controller import upload_files, delete_files, handle_query
+from flask import Flask, request, jsonify, render_template
+from utils.config import UPLOADS_DIR, logger
+from controller_layer.controller import upload_files, delete_files, handle_query, initialize_index,startup_prompt
 # Load environment variables
 load_dotenv()
 
