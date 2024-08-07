@@ -3,7 +3,7 @@ import traceback
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify, render_template
 from utils.config import UPLOADS_DIR, logger
-from controller_layer.controller import upload_files, delete_files, handle_query, initialize_index,startup_prompt
+from controller_layer.controller import upload_files, delete_files, handle_query, initialize_index,startup_prompt,clear_mongo_data
 # Load environment variables
 load_dotenv()
 
@@ -67,8 +67,21 @@ def delete_file(filename):
     except Exception as e:
         logger.error(f"Error deleting file: {e}")
         return jsonify({"error": "Error deleting file"}), 500
+    
+"""@app.teardown_appcontext
+def cleanup(exception=None):
+    # Ensure this only runs during the application teardown
+    if exception:
+        logger.error(f"Exception during request processing: {exception}")
+    clear_mongo_data()
+    logger.info("Application stopped and MongoDB data cleared.")"""
 
 if __name__ == "__main__":
-    initialize_index()
-    startup_prompt()
-    app.run(host="0.0.0.0", port=8000, debug=True, use_reloader=False)
+    try:
+        clear_mongo_data()
+        initialize_index()
+        startup_prompt()
+        app.run(host="0.0.0.0", port=8000, debug=True, use_reloader=False)
+    except Exception as e:
+        clear_mongo_data()
+        print("Application stopped and MongoDB data cleared.")

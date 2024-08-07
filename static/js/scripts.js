@@ -90,10 +90,17 @@ function deleteFile() {
 }
 
 function downloadChatAsPDF() {
-    clearMessages();
     const { jsPDF } = window.jspdf;
     const chatbox = document.getElementById('chatbox');
+    if (!chatbox) {
+        console.error('Chatbox element not found!');
+        return;
+    }
     const messages = chatbox.innerText;
+    if (!messages) {
+        console.error('No messages to download!');
+        return;
+    }
     const doc = new jsPDF();
     doc.text(messages, 10, 10);
     doc.save('chat_history.pdf');

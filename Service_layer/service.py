@@ -7,6 +7,7 @@ from utils.embeddings_utils import SentenceTransformerEmbedding
 from datetime import datetime,date
 from typing import List
 from utils.config import logger
+from utils.util_methods import store_query_response,fetch_recent_query_response
 
 # Define custom JSON serializer for objects not serializable by default JSON encoder
 def json_serialize(obj):
@@ -62,31 +63,42 @@ def convert_to_natural_language(data: List[str], natural_language_text: str) -> 
         if not data:
             return "No data present in the database for the given prompt. Please provide correct data."
 
+        recent_query, recent_response = fetch_recent_query_response()
+        
         prompt_template = """
-        You are a helpful assistant that converts database query results into natural language responses.
+        You are a helpful assistant that converts database query results into concise and precise natural language responses.
+
         Here is the natural language request:
         {natural_language_text}
+
+        Here are the most recent previous user query and its response:
+        Previous Query: {recent_query}
+        Previous Response: {recent_response}
 
         Here are the query results:
         {data}
 
         Instructions:
         - Review the query results and determine if they are relevant to the given prompt.
-        - If the data is relevant, generate a coherent natural language response based on only the provided results.
+        - If the data is relevant, generate a direct and precise natural language response based only on the provided results.
+        - Also, review the Previous Query and Previous Response, and if they are helpful, use their information in the final response; otherwise, avoid these.
         - If the data is not relevant or if no relevant data is found, respond with: "No information available, please provide a correct prompt."
-        - Not add any additional information in response.
-        
-        Please provide a response in natural language in paragraph format based on these instructions.
+        - Do not add any additional information, explanations, or context.
+        - Do not start the response with phrases like "Based on the provided query results" or similar.
+        - Generate the response in a single sentence format.
+
+        Please provide a response in natural language in a single sentence format based on these instructions.
         """
 
-        # Define the prompt template
-        prompt = PromptTemplate(input_variables=["natural_language_text", "data"], template=prompt_template)
+        prompt = PromptTemplate(input_variables=["natural_language_text", "recent_query", "recent_response", "data"], template=prompt_template)
         response_chain = LLMChain(prompt=prompt, llm=llm)
 
-        # Format the data as a string for the prompt
         formatted_data = "\n\n".join([f"Data:\n{data_item}" for data_item in data])
 
-        result = response_chain.run(natural_language_text=natural_language_text, data=formatted_data)
+        result = response_chain.run(natural_language_text=natural_language_text, recent_query=recent_query, recent_response=recent_response, data=formatted_data)
+        #store query and result into mongodb
+        store_query_response(natural_language_text,result)
+
         return result.strip()
     except Exception as e:
         logger.error(f"Unexpected error in generating natural response: {e}")

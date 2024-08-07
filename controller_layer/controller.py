@@ -1,4 +1,4 @@
-from utils.config import UPLOADS_DIR, index_name, model, logger,pinecone,spec
+from utils.config import UPLOADS_DIR, index_name, model, logger,pinecone,spec,collection
 from Service_layer.data_handling import fetch_from_files
 from Service_layer.service import process_and_index_data
 import os
@@ -142,4 +142,14 @@ def startup_prompt():
         process_and_index_data(files_data)
     except Exception as e:
         logger.error(f"error in startup prompt : {e}")
+        raise
+
+def clear_mongo_data():
+    try:
+        # Delete all documents from the collection
+        result = collection.delete_many({})
+        print(f"Deleted {result.deleted_count} documents from the collection.")
+        
+    except Exception as e:
+        logger.error(f"Error while clearing MongoDB data: {e}")
         raise

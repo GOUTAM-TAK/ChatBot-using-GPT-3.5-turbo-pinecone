@@ -3,6 +3,7 @@ from langchain_community.chat_models import ChatOpenAI
 from pinecone import Pinecone,ServerlessSpec
 import os
 import logging
+from pymongo import MongoClient
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -25,3 +26,12 @@ llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0, openai_api_key=openai_api
 # Initialize Pinecone
 pinecone = Pinecone(api_key=pinecone_api_key)
 
+#configure mongodb connection details
+MONGO_URI = "mongodb://localhost:27017/"
+DB_NAME = "task1"
+COLLECTION_NAME = "query_cache"
+
+#create a MongoDB Client
+client = MongoClient(MONGO_URI)
+db = client[DB_NAME]
+collection = db[COLLECTION_NAME]
