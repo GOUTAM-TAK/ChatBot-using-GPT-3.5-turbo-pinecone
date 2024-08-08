@@ -1,6 +1,9 @@
 from utils.config import logger
 import os
 import pdfplumber
+import pandas as pd
+from openpyxl import load_workbook
+import xlrd
 
 def extract_text_from_pdf(file_path):
     try:
@@ -24,27 +27,16 @@ def fetch_from_files(file_path):
             if file_path.lower().endswith('.pdf'):
                 # Read PDF file
                 content = extract_text_from_pdf(file_path)
-                data.append({"data": content, "source": f"File: {os.path.basename(file_path)}"})
+                data.append({"data": content, "source": os.path.basename(file_path)})
+
+            elif file_path.lower().endswith('.xlsx') or file_path.lower().endswith('.xls'):
+                 content = extract_data_from_excel(file_path)
+                 data.append({"data": content, "source": os.path.basename(file_path)})
             else:
               with open(file_path,'r') as file:
                  content = file.read()
-                 data.append({"data": content, "source": f"File: {os.path.basename(file_path)}"})
+                 data.append({"data": content, "source": os.path.basename(file_path)})
 
-        elif os.path.isdir(file_path):
-            #process ALL files in a directory
-            files = os.listdir(file_path)
-            for file_name in files:
-                full_file_path = os.path.join(file_path, file_name)
-                if os.path.isfile(full_file_path):
-                    if full_file_path.lower().endswith('.pdf'):
-                        # Read PDF file
-                        content = extract_text_from_pdf(full_file_path)
-                    else:
-
-                      with open(full_file_path,'r') as file:
-                        content = file.read()
-                        data.append({"data": content, "source": f"File: {file_name}"})
-                        
         print("successfully fetch data from file")
         return data
     except Exception as e:
@@ -52,5 +44,23 @@ def fetch_from_files(file_path):
         raise
     
 
-
+def extract_data_from_excel(file_path):
+    ext = os.path.splitext(file_path)[1].lower()
+    data = []
+    
+    if ext == '.xlsx':
+        # Read .xlsx file using openpyxl
+        workbook = load_workbook(filename=file_path, data_only=True)
+        for sheet in workbook.sheetnames:
+            worksheet = workbook[sheet]
+            for row in worksheet.iter_rows(values_only=True):
+                data.append(row)
+    elif ext == '.xls':
+        # Read .xls file using xlrd
+        workbook = xlrd.open_workbook(file_path)
+        sheet = workbook.sheet_by_index(0)
+        for row_idx in range(sheet.nrows):
+            data.append(sheet.row_values(row_idx))
+    
+    return data
 

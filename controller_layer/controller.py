@@ -1,10 +1,9 @@
-from utils.config import UPLOADS_DIR, index_name, model, logger,pinecone,spec,collection
+from utils.config import UPLOADS_DIR, index_name, model, logger,pinecone,spec,collection,name_space
 from Service_layer.data_handling import fetch_from_files
 from Service_layer.service import process_and_index_data
 import os
 import traceback
 from Service_layer import service
-from langchain_pinecone import PineconeVectorStore
 from utils.embeddings_utils import SentenceTransformerEmbedding
 from flask import jsonify
 
@@ -12,16 +11,20 @@ def upload_files(file):
     try:
        
        file_path = os.path.join(UPLOADS_DIR, file.filename)
+
+       if os.path.exists(file_path):
+            return "Same file name already present in directory."
+       
        with open(file_path, "wb") as buffer:
             buffer.write(file.read())
 
     # Process and index the uploaded file
        data = fetch_from_files(file_path)
-       process_and_index_data(data)
-
+       print("this is raw data extract from file",data)
+       return process_and_index_data(data)
     except Exception as e:
         logger.error(f"Error processing file: {e}")
-        raise
+        return "unsuccessfull file upload!!"
 
 def handle_query(query_text):
     try:
@@ -76,39 +79,20 @@ def handle_query(query_text):
     
 def delete_files(filename):
     try:
-        # Create a custom embedding object
-        embedding = SentenceTransformerEmbedding(model)
-        
-        # Initialize PineconeVectorStore
-        docsearch = PineconeVectorStore(index_name=index_name, embedding=embedding)
-        
-        # Build the query to find all vectors associated with the file
-        query_embedding = embedding.embed_query(f"File: {filename}")
-        
-        # Perform the query to get relevant vectors
-        response = pinecone_index.query(
-            vector=query_embedding,
-            top_k=1000,  # Adjust based on the expected number of vectors to retrieve
-            include_metadata=True
-        )
-        
-        # Extract IDs of vectors to delete
-        vectors_to_delete = [
-            match["id"] for match in response.get("matches", [])
-            if match.get("metadata", {}).get("source", "").startswith(f"File: {filename}")
-        ]
-        
-        if not vectors_to_delete:
-            return jsonify({"message": f"No data found for file {filename}."})
-
-        # Delete vectors from Pinecone
-        pinecone_index.delete(ids=vectors_to_delete)
-
+        if filename == '':
+            return "please give correct file name"
         # Delete the file from the uploads directory
         file_path = os.path.join(UPLOADS_DIR, filename)
-        if os.path.exists(file_path):
-            os.remove(file_path)
-
+        if not os.path.exists(file_path):
+            return "Invalid file name, give correct file name. "
+        
+        for ids in pinecone_index.list(prefix=f'{filename}#', namespace=name_space):
+          print(ids) # ['doc1#chunk1', 'doc1#chunk2', 'doc1#chunk3']
+          pinecone_index.delete(ids=ids, namespace=name_space)
+        
+        # Delete the file from the uploads directory
+        os.remove(file_path)
+        return f"File {filename} deleted successfully."
     except Exception as e:
         logger.error(f"Error processing file: {e}")
         raise
@@ -133,16 +117,6 @@ def initialize_index():
         print(f"Error initializing Pinecone index: {e}")
         traceback.print_exc()  # Print stack trace for detailed error information
         return jsonify({"error":"Error Initializing pinecone index"}),500
-    
-def startup_prompt():
-    try:
-      files_choice = input("Fetch all data from files in the uploads directory? (y/n): ")
-      if files_choice.lower() == 'y':
-        files_data = fetch_from_files(UPLOADS_DIR)
-        process_and_index_data(files_data)
-    except Exception as e:
-        logger.error(f"error in startup prompt : {e}")
-        raise
 
 def clear_mongo_data():
     try:

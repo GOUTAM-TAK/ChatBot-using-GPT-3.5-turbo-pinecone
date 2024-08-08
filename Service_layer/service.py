@@ -1,17 +1,17 @@
-from utils.config import index_name, model, llm, UPLOADS_DIR
+from utils.config import index_name, model, llm, UPLOADS_DIR,pinecone
 from langchain_pinecone import PineconeVectorStore
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
 import json
 from utils.embeddings_utils import SentenceTransformerEmbedding
-from datetime import datetime,date
+from datetime import datetime,date,time
 from typing import List
 from utils.config import logger
 from utils.util_methods import store_query_response,fetch_recent_query_response
 
 # Define custom JSON serializer for objects not serializable by default JSON encoder
 def json_serialize(obj):
-    if isinstance(obj, (datetime, date)):
+    if isinstance(obj, (datetime, date, time)):
         return obj.isoformat()
     raise TypeError(f"Type {type(obj)} not serializable")
 
@@ -22,9 +22,9 @@ def process_and_index_data(data):
             logger.warning("No data to index.")
             return
         
-        chunk_size = 1000  # Define your chunk size
-        documents = []
-        metadata_list = []
+        chunk_size = 500  # Define your chunk size
+        batch_size = 40930  # Define batch size for upsert
+        vectors = []
 
         for d in data:
             if isinstance(d, dict) and "data" in d:
@@ -34,28 +34,47 @@ def process_and_index_data(data):
                 data_string = str(d)  # Handle cases where d might be a string directly
                 source = "unknown"  # Default source for string data
 
+            
+            index = pinecone.Index(index_name)
+            # Create a custom embedding object
+            embedding = SentenceTransformerEmbedding(model)
+             # Split data_string into chunks
             chunks = [data_string[i:i+chunk_size] for i in range(0, len(data_string), chunk_size)]
-            for chunk in chunks:
-                documents.append(chunk)
-                metadata_list.append({"source": source})
 
-        # Create a custom embedding object
-        embedding = SentenceTransformerEmbedding(model)
+            # Process each chunk
+            for i, chunk in enumerate(chunks):
+                metadata = {"source": source, "chunk_id": i, "text":chunk}
+                
+                embeddings = embedding.embed_documents(chunk)
 
-        # Create or update the vector store
-        docsearch = PineconeVectorStore.from_texts(
-            texts=documents,
-            embedding=embedding,  # Pass the embedding object
-            metadatas=metadata_list,
-            namespace='task1',
-            index_name=index_name
-        )
+                vectors.append({
+                    "id": f"{source}#{i}",
+                    "values": embeddings,
+                    "metadata": metadata
+                })
+
+                # Check if batch size is reached
+                if len(vectors) <= batch_size:
+                    # Upsert batch to Pinecone
+                    index.upsert(
+                        vectors=vectors,
+                        namespace='task1'
+                    )
+                    print(f"Batch of {batch_size} indexed successfully.")
+                    vectors = [] 
+          # Upsert any remaining vectors
+        if vectors:
+            index.upsert(
+                vectors=vectors,
+                namespace='task1'
+            )
+            print(f"Final batch of {len(vectors)} indexed successfully.")
+
         print("Data indexed successfully in Pinecone.")
-
+        return "file upload successfully!"
     except Exception as e:
         logger.error(f"Error processing and indexing data: {e}")
         raise
-    
 
 # Convert query results and user queries into natural language responses
 def convert_to_natural_language(data: List[str], natural_language_text: str) -> str:

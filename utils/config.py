@@ -19,6 +19,7 @@ os.environ['PINECONE_API_KEY'] = "b807b048-2024-47bd-b4d5-c94e5f982ec0"
 pinecone_api_key = os.getenv('PINECONE_API_KEY')
 index_name = "training-project-vectordb"
 spec = ServerlessSpec(region="us-east-1", cloud="aws")
+name_space = 'task1'
 # Initialize the language model
 openai_api_key = os.getenv('OPENAI_API_KEY', 'your-openai-api-key')
 llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0, openai_api_key=openai_api_key)
