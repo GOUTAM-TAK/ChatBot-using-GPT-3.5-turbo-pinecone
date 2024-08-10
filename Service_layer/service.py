@@ -1,6 +1,9 @@
 from utils.config import index_name, model, llm, UPLOADS_DIR,pinecone
 from langchain_pinecone import PineconeVectorStore
-from langchain.prompts import PromptTemplate
+from langchain.chains.summarize import load_summarize_chain
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain import PromptTemplate
+from langchain.schema import Document  # Correct import for Document
 from langchain.chains import LLMChain
 import json
 from utils.embeddings_utils import SentenceTransformerEmbedding
@@ -77,52 +80,99 @@ def process_and_index_data(data):
         raise
 
 # Convert query results and user queries into natural language responses
+# Text Splitter: Break down the text into chunks
+text_splitter = RecursiveCharacterTextSplitter(
+    chunk_size=3000,  # Chunk size based on GPT-3.5 token limit
+    chunk_overlap=20  # Overlap to maintain context between chunks
+)
+
+# Function to convert database results into a natural language response
+# Function to convert database results into a natural language response
 def convert_to_natural_language(data: List[str], natural_language_text: str) -> str:
     try:
         if not data:
             return "No data present in the database for the given prompt. Please provide correct data."
 
+        # Fetch the most recent query and response from MongoDB or another storage
         recent_query, recent_response = fetch_recent_query_response()
-        
-        prompt_template = """
-        You are a helpful assistant that converts database query results into concise and precise natural language responses.
 
-        Here is the natural language request:
-        {natural_language_text}
+        # Default messages if recent query or response is not available
+        if not recent_query:
+            recent_query = "No previous query available."
+        if not recent_response:
+            recent_response = "No previous response available."
 
-        Here are the most recent previous user query and its response:
-        Previous Query: {recent_query}
-        Previous Response: {recent_response}
+        # Combine all data into a single string
+        full_text = " ".join(data)
 
-        Here are the query results:
-        {data}
+        # Split the text into manageable chunks
+        text_chunks = text_splitter.split_text(full_text)
 
-        Instructions:
-        - Review the query results and determine if they are relevant to the given prompt.
-        - If the data is relevant, generate a direct and precise natural language response based only on the provided results.
-        - Also, review the Previous Query and Previous Response, and if they are helpful, use their information in the final response; otherwise, avoid these.
-        - If the data is not relevant or if no relevant data is found, respond with: "No information available, please provide a correct prompt."
-        - Do not add any additional information, explanations, or context.
-        - Do not start the response with phrases like "Based on the provided query results" or similar.
-        - Generate the response in a single sentence format.
+        # Prepare documents for summarization
+        docs = [Document(page_content=t) for t in text_chunks]
 
-        Please provide a response in natural language in a single sentence format based on these instructions.
+        # Log or print the number of chunks created
+        num_chunks = len(docs)
+        print(f"Number of document chunks created: {num_chunks}")
+
+        # Define the prompt template
+        map_prompt_template = """
+        Based on the provided chunk of text, answer the following query: {user_query}.
+        Text: {text}
         """
 
-        prompt = PromptTemplate(input_variables=["natural_language_text", "recent_query", "recent_response", "data"], template=prompt_template)
-        response_chain = LLMChain(prompt=prompt, llm=llm)
+        reduce_prompt_template = """
+       Combine the following responses to answer the user's query concisely.
 
-        formatted_data = "\n\n".join([f"Data:\n{data_item}" for data_item in data])
+       User Query: {user_query}
 
-        result = response_chain.run(natural_language_text=natural_language_text, recent_query=recent_query, recent_response=recent_response, data=formatted_data)
-        #store query and result into mongodb
-        store_query_response(natural_language_text,result)
+       Mapped Responses:
+       {mapped_responses}
+       """
 
-        return result.strip()
+        # Initialize PromptTemplates
+        map_prompt = PromptTemplate(
+            input_variables=["user_query", "text"],
+            template=map_prompt_template
+        )
+
+        combine_prompt = PromptTemplate(
+            input_variables=["user_query", "mapped_responses"],
+            template=reduce_prompt_template
+        )
+
+        # Load the Map-Reduce Chain with the custom prompts
+        chain = load_summarize_chain(
+            llm=llm,
+            chain_type="map_reduce",
+            map_prompt=map_prompt,
+            combine_prompt=combine_prompt,
+            input_key="input_documents",
+            output_key="output_text"
+        )
+
+        # Run the chain
+        result = chain.invoke({
+            "input_documents": docs,
+            "user_query": natural_language_text
+        }, return_only_outputs=True)
+
+        # Extract the summary from the result
+        final_summary = result.get("output_text", "").strip()
+
+        # If no relevant information was found
+        if not final_summary:
+            final_summary = "No information available, please provide a correct prompt."
+
+        # Store the query and final summary into MongoDB or another storage
+        store_query_response(natural_language_text, final_summary)
+
+        return final_summary
     except Exception as e:
         logger.error(f"Unexpected error in generating natural response: {e}")
         raise
-    
+
+
 def fetch_query_vector(query):
     try:
         query_vector = model.encode([query])

@@ -3,7 +3,7 @@ import traceback
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify, render_template
 from utils.config import UPLOADS_DIR, logger
-from controller_layer.controller import upload_files, delete_files, handle_query, initialize_index,clear_mongo_data
+from controller_layer.controller import upload_files, delete_files, handle_query, initialize_index,clear_mongo_data, get_all_sources
 # Load environment variables
 load_dotenv()
 
@@ -53,6 +53,23 @@ def list_files():
     except Exception as e:
         logger.error(f"Error listing files: {e}")
         return jsonify({"error": "Error listing files"}), 500
+
+# List all sources in the pinecone
+@app.route('/listsources/', methods=['GET'])
+def list_sources():
+    try:
+        sources = get_all_sources()
+    
+        # If sources is a list, return it as a JSON response
+        if isinstance(sources, list):
+          return jsonify({"sourcesList": sources})
+    
+        # If no sources are available, return a message
+        return jsonify({"message": sources})
+    except Exception as e:
+        logger.error(f"Error listing files: {e}")
+        return jsonify({"error": "Error listing files"}), 500
+
 
 # Delete a file and its associated data in Pinecone
 @app.route('/deletefile/<filename>', methods=['DELETE'])

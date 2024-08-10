@@ -44,7 +44,7 @@ def handle_query(query_text):
         # Fetch results with pagination
         while True:
             response = pinecone_index.query(
-                top_k=50,  # Number of results per page
+                top_k=9999,  # Number of results per page
                 vector=query_embedding,
                 include_metadata=True,
                 namespace='task1',
@@ -59,7 +59,7 @@ def handle_query(query_text):
             cursor = response.get("next_cursor")
             
             # Break the loop if no more results or cursor is None
-            if not cursor:
+            if cursor is None or len(matches) < 9999:
                 break
         
         # Process the matches
@@ -67,16 +67,14 @@ def handle_query(query_text):
             return {"results": "No results found."}
         
         chunks = [match["metadata"]["text"] for match in all_matches]
-        #text = "\n\n".join([f"{chunk}" for chunk in chunks ])
         
-        #final_summary = service.summarize_large_text(query_text,text)
         return service.convert_to_natural_language(chunks, query_text)
     
     except Exception as e:
-        logger.error(f"Error processing file: {e}")
-        raise
+        logger.error(f"error in handle query : {e}")
+        return {"error": str(e)}
 
-    
+  
 def delete_files(filename):
     try:
         if filename == '':
@@ -116,7 +114,7 @@ def initialize_index():
     except Exception as e:
         print(f"Error initializing Pinecone index: {e}")
         traceback.print_exc()  # Print stack trace for detailed error information
-        return jsonify({"error":"Error Initializing pinecone index"}),500
+        
 
 def clear_mongo_data():
     try:
@@ -126,4 +124,37 @@ def clear_mongo_data():
         
     except Exception as e:
         logger.error(f"Error while clearing MongoDB data: {e}")
+        raise
+
+def get_all_sources():
+    try:
+    # Initialize an empty set to store unique source names
+      sources = set()
+    
+    # Iterate through all the IDs in the specified namespace
+      # Fetch all IDs in the specified namespace
+      ids_list = pinecone_index.list(namespace=name_space)
+    
+    # Check if any IDs are available
+      if not ids_list:
+        print("No sources available in the specified namespace.")
+        return sources  # Returns an empty set
+
+    # Iterate through each ID in the list
+      for id_string in ids_list:
+        # Check if id_string is a list of IDs
+        if isinstance(id_string, list):
+            # Flatten the list if necessary
+            for single_id in id_string:
+                # Split the ID at the '#' symbol and take the first part (prefix)
+                source = single_id.split('#')[0]
+                # Add the prefix to the set (duplicates will automatically be handled)
+                sources.add(source)
+        else:
+            # Handle case where id_string is a single string
+            source = id_string.split('#')[0]
+            sources.add(source)
+      return list(sources)
+    except Exception as e:
+        logger.error(f"error in get_all_source : {e}")
         raise

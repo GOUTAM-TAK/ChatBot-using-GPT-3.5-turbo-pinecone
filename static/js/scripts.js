@@ -3,6 +3,9 @@ document.addEventListener('DOMContentLoaded', (event) => {
     const imageUrl = '/static/images/chatbox_bg.jpg'; // Correct URL for the image
     chatbox.style.backgroundImage = `url('${imageUrl}')`;
     chatbox.style.backgroundSize = 'cover'; // Ensure the image covers the chatbox
+
+    // Fetch and display sources when the page loads
+    fetchSources();
 });
 
 function clearMessages() {
@@ -61,6 +64,8 @@ function addDataset() {
     .then(response => response.json())
     .then(data => {
         document.getElementById('uploadResult').innerText = data.message;
+        // Refresh sources after adding file
+        fetchSources();
     })
     .catch(error => console.error('Error:', error));
 }
@@ -85,6 +90,8 @@ function deleteFile() {
     .then(response => response.json())
     .then(data => {
         document.getElementById('deleteResult').innerText = data.message;
+        // Refresh sources after deleting file
+        fetchSources();
     })
     .catch(error => console.error('Error:', error));
 }
@@ -104,4 +111,44 @@ function downloadChatAsPDF() {
     const doc = new jsPDF();
     doc.text(messages, 10, 10);
     doc.save('chat_history.pdf');
+}
+
+function fetchSources() {
+    const sourcesList = document.getElementById('sourcesList');
+    sourcesList.innerHTML = '<p>Loading sources...</p>'; // Show loading message
+
+    fetch('/listsources/')
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`Network response was not ok. Status: ${response.status}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        sourcesList.innerHTML = ''; // Clear loading message
+
+        // Check if 'sourcesList' is present in data
+        if (!data.sourcesList) {
+            throw new Error('Invalid response format. Missing "sourcesList" field.');
+        }
+
+        // Create checkboxes for each source
+        data.sourcesList.forEach(source => {
+            const label = document.createElement('label');
+            label.textContent = source;
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.value = source;
+            checkbox.classList.add('source-checkbox');
+
+            label.appendChild(checkbox);
+            sourcesList.appendChild(label);
+            sourcesList.appendChild(document.createElement('br')); // Add line break
+        });
+    })
+    .catch(error => {
+        console.error('Error fetching sources:', error);
+        sourcesList.innerHTML = '<p>Failed to load sources. Please try again later.</p>'; // Show error message
+    });
 }
