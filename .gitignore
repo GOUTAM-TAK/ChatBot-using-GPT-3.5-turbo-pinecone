@@ -1,0 +1,26 @@
+# Ignore all files in the uploads directory
+uploads/*
+
+# Allow the directory itself
+!uploads/
+
+# Optional: If you want to ignore specific file types or other directories as well, you can add more rules here
+# For example, to ignore all .log files:
+*.log
+
+# Ignore Python bytecode files
+__pycache__/
+*.py[cod]
+
+# Ignore environment files
+.env
+
+# Ignore any temporary or backup files
+*.tmp
+*.bak
+
+# Ignore IDE-specific files (e.g., VSCode)
+.vscode/
+
+# Ignore MacOS system files
+.DS_Store
