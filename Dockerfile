@@ -17,5 +17,11 @@ EXPOSE 8000
 # Define environment variable
 ENV FLASK_APP=app.py
 
+# Set a build-time argument
+ARG OPENAI_API_KEY
+
+# Use the argument to set an environment variable
+ENV OPENAI_API_KEY=$OPENAI_API_KEY
+
 # Command to run the Flask app and enable multithreading
 CMD ["flask", "run", "--host=0.0.0.0", "--port=8000", "--with-threads"]
