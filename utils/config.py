@@ -15,7 +15,7 @@ UPLOADS_DIR = "./uploads"
 os.makedirs(UPLOADS_DIR, exist_ok=True)
 
 #set environment variable
-os.environ['PINECONE_API_KEY'] = "b807b048-2024-47bd-b4d5-c94e5f982ec0"
+os.environ['PINECONE_API_KEY'] = "b807b048-2024-47bd-b4d5-c94e5f982ec"
 pinecone_api_key = os.getenv('PINECONE_API_KEY')
 index_name = "training-project-vectordb"
 spec = ServerlessSpec(region="us-east-1", cloud="aws")
