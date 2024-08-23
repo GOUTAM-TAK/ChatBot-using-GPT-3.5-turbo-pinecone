@@ -1,182 +1,207 @@
-from utils.config import index_name, model, llm, UPLOADS_DIR,pinecone
-from langchain_pinecone import PineconeVectorStore
-from langchain.chains.summarize import load_summarize_chain
+from utils.config import index_name, model, llm, UPLOADS_DIR, pinecone
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain import PromptTemplate
-from langchain.schema import Document  # Correct import for Document
 from langchain.chains import LLMChain
 import json
 from utils.embeddings_utils import SentenceTransformerEmbedding
-from datetime import datetime,date,time
+from datetime import datetime, date, time
 from typing import List
 from utils.config import logger
-from utils.util_methods import store_query_response,fetch_recent_query_response
+from utils.util_methods import QueryResponseStorage
+from langchain.prompts import PromptTemplate
+import httpx
+class DataProcessor:
+    def __init__(self):
+        self.text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=4000,  # Chunk size based on GPT-3.5 token limit
+            chunk_overlap=20  # Overlap to maintain context between chunks
+        )
 
-# Define custom JSON serializer for objects not serializable by default JSON encoder
-def json_serialize(obj):
-    if isinstance(obj, (datetime, date, time)):
-        return obj.isoformat()
-    raise TypeError(f"Type {type(obj)} not serializable")
+        self.embedding = SentenceTransformerEmbedding(model)
+        self.index = pinecone.Index(index_name)
 
-#process data and store into vector database
-def process_and_index_data(data):
-    try:
-        if not data:
-            logger.warning("No data to index.")
-            return
-        
-        chunk_size = 500  # Define your chunk size
-        batch_size = 40930  # Define batch size for upsert
-        vectors = []
+    def process_and_index_data(self, data):
+        try:
+            if not data:
+                logger.warning("No data to index.")
+                return
 
-        for d in data:
-            if isinstance(d, dict) and "data" in d:
-                data_string = json.dumps(d["data"], default=json_serialize)
-                source = d.get("source", "unknown")
-            else:
-                data_string = str(d)  # Handle cases where d might be a string directly
-                source = "unknown"  # Default source for string data
+            chunk_size = 500  # Define your chunk size
+            batch_size = 40930  # Define batch size for upsert
+            vectors = []
 
-            
-            index = pinecone.Index(index_name)
-            # Create a custom embedding object
-            embedding = SentenceTransformerEmbedding(model)
-             # Split data_string into chunks
-            chunks = [data_string[i:i+chunk_size] for i in range(0, len(data_string), chunk_size)]
+            for d in data:
+                if isinstance(d, dict) and "data" in d:
+                    data_string = json.dumps(d["data"], default=self.json_serialize)
+                    source = d.get("source", "unknown")
+                else:
+                    data_string = str(d)  # Handle cases where d might be a string directly
+                    source = "unknown"  # Default source for string data
+               
+                # Split data_string into chunks using text_splitter
+                chunks = self.text_splitter.split_text(data_string)
 
-            # Process each chunk
-            for i, chunk in enumerate(chunks):
-                metadata = {"source": source, "chunk_id": i, "text":chunk}
-                
-                embeddings = embedding.embed_documents(chunk)
+                # Process each chunk
+                for i, chunk in enumerate(chunks):
+                    metadata = {"source": source, "chunk_id": i, "text": chunk}
 
-                vectors.append({
-                    "id": f"{source}#{i}",
-                    "values": embeddings,
-                    "metadata": metadata
-                })
+                    embeddings = self.embedding.embed_documents(chunk)
 
-                # Check if batch size is reached
-                if len(vectors) <= batch_size:
-                    # Upsert batch to Pinecone
-                    index.upsert(
-                        vectors=vectors,
-                        namespace='task1'
-                    )
-                    print(f"Batch of {batch_size} indexed successfully.")
-                    vectors = [] 
-          # Upsert any remaining vectors
-        if vectors:
-            index.upsert(
-                vectors=vectors,
-                namespace='task1'
+                    vectors.append({
+                        "id": f"{source}#{i}",
+                        "values": embeddings,
+                        "metadata": metadata
+                    })
+
+                    # Check if batch size is reached
+                    if len(vectors) >= batch_size:
+                        # Upsert batch to Pinecone
+                        self.index.upsert(
+                            vectors=vectors,
+                            namespace='task1'
+                        )
+                        print(f"Batch of {batch_size} indexed successfully.")
+                        vectors = []
+            # Upsert any remaining vectors
+            if vectors:
+                self.index.upsert(
+                    vectors=vectors,
+                    namespace='task1'
+                )
+                print(f"Final batch of {len(vectors)} indexed successfully.")
+
+            print("Data indexed successfully in Pinecone.")
+            return "File upload successfully!"
+        except Exception as e:
+            logger.error(f"Error processing and indexing data: {e}")
+            raise
+
+    @staticmethod
+    def json_serialize(obj):
+        if isinstance(obj, (datetime, date, time)):
+            return obj.isoformat()
+        raise TypeError(f"Type {type(obj)} not serializable")
+
+    def convert_to_natural_language(self, data: List[str], natural_language_text: str) -> List[str]:
+        try:
+            if not data:
+                return ["No data present in the database for the given prompt. Please provide correct data."]
+
+            # Combine all data items into a single string
+            full_text = " ".join(data)
+
+            # Split the full text into manageable chunks
+            text_chunks = self.text_splitter.split_text(full_text)
+
+            print("Number of chunks are: ", len(text_chunks))
+
+            # Fetch the most recent query and response from MongoDB or another storage
+            recent_query, recent_response = QueryResponseStorage.fetch_recent_query_response()
+
+            # Define the prompt template
+            prompt_template = """
+            You are a helpful assistant tasked with reviewing chunks of text to identify and perform specific tasks based on the user's query.
+
+            Here is the user's query in the form of a natural language request:
+            {natural_language_text}
+
+            Here are the most recent previous user query and its response:
+            Previous Query: {recent_query}
+            Previous Response: {recent_response}
+
+            Below are the chunks of text:
+            {data}
+
+Instructions:
+- For each chunk of text, determine if it contains relevant information that answers the user's query.
+- If the query requests a task like counting, summarize or analysis, perform the required task and provide the result.
+- Use the previous query and response if they are relevant; otherwise, ignore them.
+- If a chunk contains relevant information, extract and return only the information that directly addresses the query.
+- If a chunk does not contain relevant information, return "No answer in this chunk."
+- Do not add any additional information, explanations, or context.
+- Ensure that each returned result is concise and within a 20-word limit.
+"""
+
+            # Create the prompt using the PromptTemplate
+            prompt = PromptTemplate(
+                input_variables=["natural_language_text", "recent_query", "recent_response", "data"],
+                template=prompt_template
             )
-            print(f"Final batch of {len(vectors)} indexed successfully.")
 
-        print("Data indexed successfully in Pinecone.")
-        return "file upload successfully!"
-    except Exception as e:
-        logger.error(f"Error processing and indexing data: {e}")
-        raise
+            # Initialize the response chain with the LLM and prompt
+            response_chain = LLMChain(prompt=prompt, llm=llm)
 
-# Convert query results and user queries into natural language responses
-# Text Splitter: Break down the text into chunks
-text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=3000,  # Chunk size based on GPT-3.5 token limit
-    chunk_overlap=20  # Overlap to maintain context between chunks
-)
+            # Collect responses for each chunk
+            responses = []
+            for data_chunk in text_chunks:
+              formatted_data = f"Data:\n{data_chunk}"
+              response = response_chain.run(
+                natural_language_text=natural_language_text,
+                recent_query=recent_query,
+                recent_response=recent_response,
+                data=formatted_data
+            )
+              responses.append(response.strip())
+        
+            return responses
 
-# Function to convert database results into a natural language response
-# Function to convert database results into a natural language response
-def convert_to_natural_language(data: List[str], natural_language_text: str) -> str:
-    try:
-        if not data:
-            return "No data present in the database for the given prompt. Please provide correct data."
+        except Exception as e:
+            logger.error(f"Unexpected error in generating natural response: {e}")
+            raise
 
-        # Fetch the most recent query and response from MongoDB or another storage
-        recent_query, recent_response = fetch_recent_query_response()
+    def final_response(self, intermediate_responses: List[str], natural_language_text: str) -> str:
+        try:
+            # Fetch the most recent query and response from MongoDB or another storage
+            recent_query, recent_response = QueryResponseStorage.fetch_recent_query_response()
 
-        # Default messages if recent query or response is not available
-        if not recent_query:
-            recent_query = "No previous query available."
-        if not recent_response:
-            recent_response = "No previous response available."
+            # Combine the intermediate responses into a single string
+            combined_data = "\n\n".join(intermediate_responses)
 
-        # Combine all data into a single string
-        full_text = " ".join(data)
+            # Define the final prompt template
+            final_prompt_template = """
+            You are a helpful assistant that synthesizes multiple intermediate responses into a final concise and precise natural language response.
 
-        # Split the text into manageable chunks
-        text_chunks = text_splitter.split_text(full_text)
+            Here is the user's query in the form of a natural language request:
+            {natural_language_text}
 
-        # Prepare documents for summarization
-        docs = [Document(page_content=t) for t in text_chunks]
+            Here are the most recent previous user query and its response:
+            Previous Query: {recent_query}
+            Previous Response: {recent_response}
 
-        # Log or print the number of chunks created
-        num_chunks = len(docs)
-        print(f"Number of document chunks created: {num_chunks}")
+            Below are the combined intermediate responses:
+            {data}
 
-        # Define the prompt template
-        map_prompt_template = """
-        Based on the provided chunk of text, answer the following query: {user_query}.
-        Text: {text}
-        """
+Instructions:
+- Carefully review the combined intermediate responses.
+- Extract and synthesize the relevant information to generate a clear and direct answer to the user's query.
+- Perform any required tasks based on the query, such as analysis, summarization, counting, adding or prediction, using the intermediate responses.
+- Ensure that your response is concise and directly addresses the query based on the provided information.
+- Also, review the recent Previous Query and its Response, and if they are helpful, use their information in the final response; otherwise, avoid these.
+- If the combined responses do not contain relevant information or if no answer can be derived, respond with: "No information available, please provide a correct prompt."
+- Avoid adding any extra information, context, or explanations.
+- Do not start the response with phrases like "Based on the provided query results" or similar.
+- Provide a final response in a single sentence format, based solely on the combined intermediate responses.
+"""
 
-        reduce_prompt_template = """
-       Combine the following responses to answer the user's query concisely.
+            # Create the final prompt using the PromptTemplate
+            final_prompt = PromptTemplate(
+                input_variables=["natural_language_text", "recent_query", "recent_response", "data"],
+                template=final_prompt_template
+            )
 
-       User Query: {user_query}
+            # Initialize the final response chain with the LLM and final prompt
+            final_response_chain = LLMChain(prompt=final_prompt, llm=llm)
 
-       Mapped Responses:
-       {mapped_responses}
-       """
+            # Generate the final response
+            final_response = final_response_chain.run(
+                natural_language_text=natural_language_text,
+                recent_query=recent_query,
+                recent_response=recent_response,
+                data="\n\n".join(intermediate_responses)
+            )
+            # Store the final query and response in MongoDB or another storage
+            QueryResponseStorage.store_query_response(natural_language_text, final_response.strip())
+            return final_response.strip()
 
-        # Initialize PromptTemplates
-        map_prompt = PromptTemplate(
-            input_variables=["user_query", "text"],
-            template=map_prompt_template
-        )
-
-        combine_prompt = PromptTemplate(
-            input_variables=["user_query", "mapped_responses"],
-            template=reduce_prompt_template
-        )
-
-        # Load the Map-Reduce Chain with the custom prompts
-        chain = load_summarize_chain(
-            llm=llm,
-            chain_type="map_reduce",
-            map_prompt=map_prompt,
-            combine_prompt=combine_prompt,
-            input_key="input_documents",
-            output_key="output_text"
-        )
-
-        # Run the chain
-        result = chain.invoke({
-            "input_documents": docs,
-            "user_query": natural_language_text
-        }, return_only_outputs=True)
-
-        # Extract the summary from the result
-        final_summary = result.get("output_text", "").strip()
-
-        # If no relevant information was found
-        if not final_summary:
-            final_summary = "No information available, please provide a correct prompt."
-
-        # Store the query and final summary into MongoDB or another storage
-        store_query_response(natural_language_text, final_summary)
-
-        return final_summary
-    except Exception as e:
-        logger.error(f"Unexpected error in generating natural response: {e}")
-        raise
-
-
-def fetch_query_vector(query):
-    try:
-        query_vector = model.encode([query])
-        return query_vector[0]
-    except Exception as e:
-        logger.error(f"Error encoding query: {e}")
-        raise
+        except Exception as e:
+            logger.error(f"Unexpected error in generating final response: {e}")
+            raise
