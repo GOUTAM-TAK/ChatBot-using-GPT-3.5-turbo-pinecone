@@ -1,14 +1,16 @@
 import os
+import re
 import traceback
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify, render_template
 from utils.config import UPLOADS_DIR, logger
-from controller_layer.controller import upload_files, delete_files, handle_query, initialize_index,clear_mongo_data, get_all_sources
+from controller_layer.controller import FileController
 # Load environment variables
 load_dotenv()
 
 # Initialize FastAPI app
 app = Flask(__name__, static_folder='static', template_folder='templates')
+controller = FileController()
 
 @app.route('/')
 def index():
@@ -19,7 +21,22 @@ def index():
 def query_data():
     try:
         query_text = request.json.get('query')
-        response = handle_query(query_text)
+         # Strip leading and trailing spaces from query_text
+        query_text = query_text.strip()
+        if query_text == '' :
+          return {"response" : "query should be in correct form"}
+         # Define a regex pattern to match special characters
+        special_char_pattern = re.compile(r'[!@#%^&*()":{}|<>]')
+
+        # Check if the query_text contains any special characters
+        if special_char_pattern.search(query_text):
+          return {"response": "Query should not contain special characters"}
+        sources = request.json.get('sources')
+         # Check if sources is empty or not provided
+        if not sources:  # This checks if sources is None or an empty list
+          return {"response": "sources list should not be empty"}
+        
+        response = controller.handle_query(query_text, sources=sources)
         return {"response": response}
     
     except Exception as e:
@@ -38,10 +55,10 @@ def upload_file():
         if file.filename == '':
             return jsonify({"message": "No selected file"})
         
-        return jsonify({"message": upload_files(file)})
+        return jsonify({"message": controller.upload_files(file)})
     except Exception as e:
         logger.error(f"Error uploading file: {e}")
-        return jsonify({"message": "Error uploading file"})
+        return jsonify({"message": "Error uploading file"}), 500
     
 
 # List all files in the uploads directory
@@ -58,11 +75,12 @@ def list_files():
 @app.route('/listsources/', methods=['GET'])
 def list_sources():
     try:
-        sources = get_all_sources()
+        sources = controller.get_all_sources()
     
         # If sources is a list, return it as a JSON response
         if isinstance(sources, list):
-          return jsonify({"sourcesList": sources})
+          sources_sorted = sorted(sources)
+          return jsonify({"sourcesList": sources_sorted})
     
         # If no sources are available, return a message
         return jsonify({"message": sources})
@@ -76,13 +94,11 @@ def list_sources():
 def delete_file(filename):
     try:
        
-       return jsonify({"message": delete_files(filename)}), 200
+       return jsonify({"message": controller.delete_files(filename)}), 200
     
     except Exception as e:
         logger.error(f"Error deleting file: {e}")
         return jsonify({"error": "Error deleting file"}), 500
 
 if __name__ == "__main__":    
-    clear_mongo_data()
-    initialize_index()
-    app.run(host="0.0.0.0", port=8000, debug=True, use_reloader=False)
+    app.run(host="0.0.0.0", port=8000, debug=True, use_reloader=False, threaded = True)
