@@ -1,4 +1,4 @@
-name: Build and Publish Docker image
+name: Build, Publish, and Deploy Docker image
 
 on:
   push:
@@ -30,3 +30,11 @@ jobs:
           tags: ${{ secrets.DOCKER_USERNAME }}/chatbot:latest
           build-args: |
             OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Run Docker container
+        run: |
+          docker run -d -p 9090:8080 --name my-running-app -e OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }} ${{ secrets.DOCKER_USERNAME }}/chatbot:latest
